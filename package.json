@@ -1,6 +1,6 @@
 {
   "name": "security-lab",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "A secured Node.js/Express app demonstrating web security best practices",
   "main": "app.js",
   "scripts": {
@@ -15,7 +15,8 @@
     "express-rate-limit": "^7.3.1",
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
-    "validator": "^13.12.0"
+    "validator": "^13.12.0",
+    "winston": "^3.13.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.0"

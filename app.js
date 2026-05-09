@@ -15,6 +15,24 @@ const jwt        = require('jsonwebtoken');
 const validator  = require('validator');
 const helmet     = require('helmet');
 const rateLimit  = require('express-rate-limit');
+const winston    = require('winston');
+
+// ── Logger Setup ──────────────────────────────────────────
+// Logs to both the console and a persistent security.log file.
+// Levels: info (normal events), warn (suspicious), error (failures)
+const logger = winston.createLogger({
+  level: 'info',
+  format: winston.format.combine(
+    winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+    winston.format.printf(({ timestamp, level, message }) =>
+      `[${timestamp}] ${level.toUpperCase()}: ${message}`
+    )
+  ),
+  transports: [
+    new winston.transports.Console(),
+    new winston.transports.File({ filename: 'security.log' })
+  ]
+});
 
 const app = express();
 
@@ -25,6 +43,14 @@ const app = express();
 //   Content-Security-Policy            → mitigates XSS attacks
 //   Strict-Transport-Security          → enforces HTTPS
 app.use(helmet());
+
+// ── Request Logger ────────────────────────────────────────
+// Logs every incoming request: method, path, and IP address.
+app.use((req, res, next) => {
+  const ip = req.ip || req.connection.remoteAddress;
+  logger.info(`${req.method} ${req.path} — IP: ${ip}`);
+  next();
+});
 
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
@@ -39,6 +65,11 @@ const authLimiter = rateLimit({
   message: { error: 'Too many attempts from this IP, please try again after 15 minutes.' },
   standardHeaders: true,
   legacyHeaders: false,
+  handler: (req, res, next, options) => {
+    const ip = req.ip || req.connection.remoteAddress;
+    logger.warn(`RATE LIMIT exceeded — IP: ${ip} on ${req.method} ${req.path}`);
+    res.status(options.statusCode).json(options.message);
+  }
 });
 
 // ── Auth Middleware ───────────────────────────────────────
@@ -49,6 +80,7 @@ function requireAuth(req, res, next) {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    logger.warn(`Unauthorized access attempt — no token — IP: ${req.ip} on ${req.path}`);
     return res.status(401).json({ error: 'No token provided. Please log in.' });
   }
 
@@ -59,6 +91,7 @@ function requireAuth(req, res, next) {
     req.user = decoded; // { id, iat, exp }
     next();
   } catch (err) {
+    logger.warn(`Invalid token attempt — IP: ${req.ip} on ${req.path} — ${err.message}`);
     return res.status(401).json({ error: 'Invalid or expired token. Please log in again.' });
   }
 }
@@ -83,6 +116,7 @@ let nextId = 3;
       password: await bcrypt.hash(u.password, 10),
     }))
   );
+  logger.info('Seed user passwords hashed successfully on startup');
 })();
 
 // ── Routes ────────────────────────────────────────────────
@@ -99,22 +133,26 @@ app.post('/register', authLimiter, async (req, res) => {
 
   // Validate email format
   if (!email || !validator.isEmail(email)) {
+    logger.warn(`Register failed — invalid email format: "${email}" — IP: ${req.ip}`);
     return res.status(400).json({ error: 'Invalid email format.' });
   }
 
   // Enforce minimum password length
   if (!password || password.length < 6) {
+    logger.warn(`Register failed — password too short — IP: ${req.ip}`);
     return res.status(400).json({ error: 'Password must be at least 6 characters.' });
   }
 
   // Ensure name is not blank or whitespace-only
   if (!name || validator.isEmpty(name.trim())) {
+    logger.warn(`Register failed — missing name — IP: ${req.ip}`);
     return res.status(400).json({ error: 'Name is required.' });
   }
 
   // Prevent duplicate registrations
   const existingUser = users.find(u => u.email === email);
   if (existingUser) {
+    logger.warn(`Register failed — duplicate email: ${email} — IP: ${req.ip}`);
     return res.status(409).json({ error: 'Email already registered.' });
   }
 
@@ -130,6 +168,8 @@ app.post('/register', authLimiter, async (req, res) => {
 
   users.push(newUser);
 
+  logger.info(`New user registered — email: ${email} — ID: ${newUser.id} — IP: ${req.ip}`);
+
   // Return user info without the password hash
   res.status(201).json({
     message: `User "${newUser.name}" registered successfully.`,
@@ -144,11 +184,13 @@ app.post('/login', authLimiter, async (req, res) => {
 
   // Validate email format
   if (!email || !validator.isEmail(email)) {
+    logger.warn(`Login failed — invalid email format: "${email}" — IP: ${req.ip}`);
     return res.status(400).json({ error: 'Invalid email format.' });
   }
 
   // Ensure password field is present
   if (!password) {
+    logger.warn(`Login failed — missing password — IP: ${req.ip}`);
     return res.status(400).json({ error: 'Password is required.' });
   }
 
@@ -158,8 +200,11 @@ app.post('/login', authLimiter, async (req, res) => {
   // Returning the same generic error for both "user not found"
   // and "wrong password" prevents user enumeration attacks.
   if (!user || !(await bcrypt.compare(password, user.password))) {
+    logger.warn(`Login failed — invalid credentials for email: ${email} — IP: ${req.ip}`);
     return res.status(401).json({ error: 'Invalid email or password.' });
   }
+
+  logger.info(`Login successful — email: ${email} — ID: ${user.id} — IP: ${req.ip}`);
 
   // Sign a JWT with the user's ID.
   // Secret is loaded from environment — never hardcoded.
@@ -185,9 +230,11 @@ app.get('/profile', requireAuth, (req, res) => {
   const user = users.find(u => u.id === req.user.id);
 
   if (!user) {
+    logger.error(`Profile fetch failed — user ID ${req.user.id} not found — IP: ${req.ip}`);
     return res.status(404).json({ error: 'User not found.' });
   }
 
+  logger.info(`Profile accessed — user ID: ${req.user.id} — IP: ${req.ip}`);
   // Never include the password hash in any response
   res.json({ id: user.id, email: user.email, name: user.name });
 });
@@ -196,6 +243,7 @@ app.get('/profile', requireAuth, (req, res) => {
 // Returns all users for authenticated users only (e.g. admin tooling).
 // Password hashes are stripped before sending.
 app.get('/users', requireAuth, (req, res) => {
+  logger.info(`User list accessed — requested by ID: ${req.user.id} — IP: ${req.ip}`);
   const safeUsers = users.map(({ password, ...rest }) => rest);
   res.json(safeUsers);
 });
@@ -203,5 +251,5 @@ app.get('/users', requireAuth, (req, res) => {
 // ── Start server ──────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`\n✅  Security Lab running at http://localhost:${PORT}\n`);
+  logger.info(`Security Lab started — http://localhost:${PORT}`);
 });
