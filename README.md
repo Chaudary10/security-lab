@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # ⚠️ Security Lab — Vulnerable Node.js/Express App
 
 > **For educational use only. Never deploy this publicly.**
@@ -131,3 +132,6 @@ app.use(helmet()); // adds ~15 security headers automatically
 | Password hashing | `bcrypt` |
 | Auth tokens | `jsonwebtoken` |
 | Security headers | `helmet` |
+=======
+# Initial-vulnerable-lab
+>>>>>>> 29e7db39597ea559523b5ff580a2dfbdb04341ba
