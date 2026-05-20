@@ -2,6 +2,7 @@
 //  SECURITY LAB — app.js
 //  ✅  SECURED VERSION — all vulnerabilities fixed
 //  ✅  WEEK 4 — CORS, global rate limiting, API key auth added
+//  ✅  WEEK 4 — CSP and HSTS security headers configured
 // ============================================================
 
 // Load environment variables from .env file
@@ -39,12 +40,42 @@ const logger = winston.createLogger({
 const app = express();
 
 // ── Security Middleware ───────────────────────────────────
-// helmet() sets all critical security headers automatically:
-//   X-Frame-Options: SAMEORIGIN        → prevents clickjacking
-//   X-Content-Type-Options: nosniff    → prevents MIME sniffing
-//   Content-Security-Policy            → mitigates XSS attacks
-//   Strict-Transport-Security          → enforces HTTPS
+// helmet() sets baseline security headers automatically.
+// We then explicitly configure CSP and HSTS for full Task 3 coverage.
 app.use(helmet());
+
+// ── Content Security Policy (CSP) ────────────────────────
+// Prevents XSS / script injection attacks by whitelisting
+// trusted sources for scripts, styles, images, fonts etc.
+// defaultSrc: 'self' means only load resources from this domain.
+// objectSrc/frameSrc: 'none' blocks Flash embeds and iframes entirely.
+app.use(
+  helmet.contentSecurityPolicy({
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc:  ["'self'"],
+      styleSrc:   ["'self'", "'unsafe-inline'"],
+      imgSrc:     ["'self'", "data:"],
+      connectSrc: ["'self'"],
+      fontSrc:    ["'self'"],
+      objectSrc:  ["'none'"],
+      frameSrc:   ["'none'"],
+    },
+  })
+);
+
+// ── HSTS (Strict-Transport-Security) ─────────────────────
+// Forces browsers to ALWAYS use HTTPS for this domain.
+// maxAge: 1 year (31536000 seconds)
+// includeSubDomains: applies to all subdomains too
+// preload: allows submission to browser HSTS preload lists
+app.use(
+  helmet.hsts({
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true,
+  })
+);
 
 // ── CORS Configuration ────────────────────────────────────
 // Restricts which domains can make requests to this API.
