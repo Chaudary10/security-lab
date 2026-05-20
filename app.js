@@ -1,6 +1,7 @@
 // ============================================================
 //  SECURITY LAB — app.js
 //  ✅  SECURED VERSION — all vulnerabilities fixed
+//  ✅  WEEK 4 — CORS, global rate limiting, API key auth added
 // ============================================================
 
 // Load environment variables from .env file
@@ -15,6 +16,7 @@ const jwt        = require('jsonwebtoken');
 const validator  = require('validator');
 const helmet     = require('helmet');
 const rateLimit  = require('express-rate-limit');
+const cors       = require('cors');
 const winston    = require('winston');
 
 // ── Logger Setup ──────────────────────────────────────────
@@ -43,6 +45,34 @@ const app = express();
 //   Content-Security-Policy            → mitigates XSS attacks
 //   Strict-Transport-Security          → enforces HTTPS
 app.use(helmet());
+
+// ── CORS Configuration ────────────────────────────────────
+// Restricts which domains can make requests to this API.
+// Only requests from the listed origins will be accepted.
+// Change 'http://localhost:3000' to your actual frontend URL in production.
+app.use(cors({
+  origin: ['http://localhost:3000'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key'],
+  credentials: true
+}));
+
+// ── Global Rate Limiter ───────────────────────────────────
+// Applies to ALL routes — limits each IP to 100 requests per 15 minutes.
+// authLimiter below adds a stricter limit (10 requests) on /login & /register.
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests from this IP, please try again after 15 minutes.' },
+  handler: (req, res, next, options) => {
+    const ip = req.ip || req.connection.remoteAddress;
+    logger.warn(`GLOBAL RATE LIMIT exceeded — IP: ${ip} on ${req.method} ${req.path}`);
+    res.status(options.statusCode).json(options.message);
+  }
+});
+app.use(globalLimiter);
 
 // ── Request Logger ────────────────────────────────────────
 // Logs every incoming request: method, path, and IP address.
@@ -94,6 +124,26 @@ function requireAuth(req, res, next) {
     logger.warn(`Invalid token attempt — IP: ${req.ip} on ${req.path} — ${err.message}`);
     return res.status(401).json({ error: 'Invalid or expired token. Please log in again.' });
   }
+}
+
+// ── API Key Middleware ────────────────────────────────────
+// Alternative auth method using a static API key in the request header.
+// Usage: x-api-key: your-secret-key (set API_KEY in your .env file)
+// Apply to any route with: app.use('/api/', apiKeyAuth)
+function apiKeyAuth(req, res, next) {
+  const clientKey = req.headers['x-api-key'];
+
+  if (!clientKey) {
+    logger.warn(`API key missing — IP: ${req.ip} on ${req.path}`);
+    return res.status(401).json({ error: 'API key missing. Include x-api-key header.' });
+  }
+
+  if (clientKey !== process.env.API_KEY) {
+    logger.warn(`Invalid API key attempt — IP: ${req.ip} on ${req.path}`);
+    return res.status(403).json({ error: 'Invalid API key.' });
+  }
+
+  next();
 }
 
 // ── Mock "Database" (in-memory array) ────────────────────

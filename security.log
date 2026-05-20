@@ -1,0 +1,10 @@
+[2026-05-10 00:30:44] INFO: Security Lab started — http://localhost:3000
+[2026-05-10 00:30:44] INFO: Seed user passwords hashed successfully on startup
+[2026-05-10 00:30:51] INFO: GET / — IP: ::1
+[2026-05-10 00:30:51] INFO: GET /main.js — IP: ::1
+[2026-05-10 00:30:51] INFO: GET /main.js — IP: ::1
+[2026-05-10 00:30:51] INFO: GET /favicon.ico — IP: ::1
+[2026-05-10 00:42:45] INFO: GET / — IP: ::ffff:127.0.0.1
+[2026-05-10 00:42:45] INFO: OPTIONS / — IP: ::ffff:127.0.0.1
+[2026-05-10 00:42:45] INFO: OPTIONS / — IP: ::ffff:127.0.0.1
+[2026-05-10 00:42:45] INFO: GET /nice%20ports%2C/Tri%6Eity.txt%2ebak — IP: ::ffff:127.0.0.1
